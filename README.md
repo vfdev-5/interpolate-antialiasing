@@ -42,6 +42,34 @@ Kernel values are computed as following
 
 ```
 
+## Step 0
+
+```bash
+PYTHONPATH=/pytorch/ python test.py
+
+Input tensor: [1, 3, 438, 906]
+Input is_contiguous memory_format torch.channels_last: true
+Input is_contiguous memory_format torch.channels_last_3d: false
+Input is_contiguous : false
+
+Output tensor: [1, 3, 196, 320]
+Output is_contiguous memory_format torch.channels_last: false
+Output is_contiguous memory_format torch.channels_last_3d: false
+Output is_contiguous : true
+-> Antialias option: scale=2.23469
+-> Antialias option: scale=2.83125
+Size of indices_weights: 2
+- dim 1 size: 14
+- dim 2 size: 14
+AA TI_SHOW: N=320
+AA TI_SHOW: interp_size=7
+AA TI_SHOW_STRIDES: 4 0 | 0 0 0 0 0 0 0 0 0 0 0 0 0 0 | 8 4 8 4 8 4 8 4 8 4 8 4 8 4 |
+PyTorch vs PIL: Mean Absolute Error: 6.302572250366211
+PyTorch vs PIL: Max Absolute Error: 151.0
+Proto vs PIL: Mean Absolute Error: 0.5034226179122925
+Proto vs PIL: Max Absolute Error: 1.0
+Saved downsampled proto output: data/proto_aa_interp_lin_s0_output.png
+```
 
 
 ## Refs:

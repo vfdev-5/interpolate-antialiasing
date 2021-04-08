@@ -9,7 +9,7 @@
 
 
 #define USE_ALWAYS_INDEX64
-// #define VERBOSE
+#define VERBOSE
 
 
 namespace at {
@@ -109,9 +109,49 @@ struct Interpolate<1, scalar_t, index_t, 1> {
     }
 };
 
+template <int n, typename scalar_t, typename index_t>
+struct InterpolateAA {
+    static inline scalar_t eval(char* src, char** data, const int64_t* strides, int64_t i, int interp_size) {
+      index_t ids = *(index_t*)&data[0][i * strides[0]];
+      scalar_t wts = *(scalar_t*)&data[1][i * strides[1]];
+      scalar_t t = InterpolateAA<n - 1, scalar_t, index_t>::eval(src + ids, &data[2 * interp_size], &strides[2 * interp_size], i, interp_size);
+      scalar_t output = t * wts;
+      for (int j=1; j<interp_size; j++) {
+        ids = *(index_t*)&data[2 * j + 0][i * strides[2 * j + 0]];
+        wts = *(scalar_t*)&data[2 * j + 1][i * strides[2 * j + 1]];
+        t = InterpolateAA<n - 1, scalar_t, index_t>::eval(src + ids, &data[2 * interp_size], &strides[2 * interp_size], i, interp_size);
+        output += t * wts;
+      }
+      return output;
+  }
+};
+
+template <typename scalar_t, typename index_t>
+struct InterpolateAA<1, scalar_t, index_t> {
+    static inline scalar_t eval(char* src, char** data, const int64_t* strides, int64_t i, int interp_size) {
+      index_t ids = *(index_t*)&data[0][i * strides[0]];
+      scalar_t wts = *(scalar_t*)&data[1][i * strides[1]];
+      scalar_t t = *(scalar_t *)&src[ids];
+      scalar_t output = t * wts;
+      for (int j=1; j<interp_size; j++) {
+        ids = *(index_t*)&data[2 * j + 0][i * strides[2 * j + 0]];
+        wts = *(scalar_t*)&data[2 * j + 1][i * strides[2 * j + 1]];
+        t = *(scalar_t *)&src[ids];
+        output += t * wts;
+      }
+      return output;
+    }
+};
+
+
 template <int n, typename scalar_t, typename index_t, int interp_size>
 static inline scalar_t interpolate(char* src, char** data, const int64_t* strides, int64_t i) {
   return Interpolate<n, scalar_t, index_t, interp_size>::eval(src, data, strides, i);
+}
+
+template <int n, typename scalar_t, typename index_t>
+static inline scalar_t interpolate_aa(char* src, char** data, const int64_t* strides, int64_t i, int interp_size) {
+  return InterpolateAA<n, scalar_t, index_t>::eval(src, data, strides, i, interp_size);
 }
 
 template<int interp_size>
@@ -171,6 +211,15 @@ static inline void basic_loop(char** data, const int64_t* strides, int64_t n) {
   }
 }
 
+template <typename scalar_t, typename index_t, int out_ndims>
+static inline void basic_loop_aa(char** data, const int64_t* strides, int64_t n, int interp_size) {
+  char* dst = data[0];
+  char* src = data[1];
+  for (int64_t i = 0; i < n; i++) {
+    *(scalar_t*)&dst[i * strides[0]] = interpolate_aa<out_ndims, scalar_t, index_t>(
+        src + i * strides[1], &data[2], &strides[2], i, interp_size);
+  }
+}
 
 template <typename scalar_t, typename index_t, int out_ndims, int interp_size>
 void ti_cpu_upsample_generic(at::TensorIterator& iter)
@@ -183,9 +232,12 @@ void ti_cpu_upsample_generic(at::TensorIterator& iter)
       std::cout << "TI_SHOW_STRIDES: "
         << strides[0] << " "
         << strides[1] << " | ";
+
+      int m = 2 * interp_size;
+
       for (int i=0; i<out_ndims; i++) {
-        for (int j=0; j<2 * interp_size; j++) {
-          std::cout << strides[2 * interp_size * i + j + 2] << " ";
+        for (int j=0; j<m; j++) {
+          std::cout << strides[m * i + j + 2] << " ";
         }
         std::cout << "| ";
       }
@@ -193,6 +245,7 @@ void ti_cpu_upsample_generic(at::TensorIterator& iter)
       TI_SHOW_STRIDES = false;
     }
 #endif
+
     // special-cases to let the compiler apply compile-time input-specific optimizations
     if ((strides[0] == sizeof(scalar_t)) && (strides[1] == 0) &&
         check_almost_all_zero_stride<out_ndims, 1, scalar_t, index_t, interp_size>(&strides[2])) {
@@ -225,6 +278,44 @@ void ti_cpu_upsample_generic(at::TensorIterator& iter)
       basic_loop<scalar_t, index_t, out_ndims, interp_size>(data, strides, n);
     }
   };
+
+  iter.for_each(loop);
+}
+
+
+template <typename scalar_t, typename index_t, int out_ndims>
+void ti_cpu_upsample_generic_aa(at::TensorIterator& iter)
+{
+
+  int interp_size = (iter.ntensors() - 2) / out_ndims / 2;
+
+  auto loop = [&](char** data, const int64_t* strides, int64_t n) {
+
+#ifdef VERBOSE
+    if (TI_SHOW_STRIDES) {
+      std::cout << "AA TI_SHOW: N=" << n << std::endl;
+      std::cout << "AA TI_SHOW: interp_size=" << interp_size << std::endl;
+      std::cout << "AA TI_SHOW_STRIDES: "
+        << strides[0] << " "
+        << strides[1] << " | ";
+
+      int m = 2 * interp_size;
+
+      for (int i=0; i<out_ndims; i++) {
+        for (int j=0; j<m; j++) {
+          std::cout << strides[m * i + j + 2] << " ";
+        }
+        std::cout << "| ";
+      }
+      std::cout << std::endl;
+      TI_SHOW_STRIDES = false;
+    }
+#endif
+
+    basic_loop_aa<scalar_t, index_t, out_ndims>(data, strides, n, interp_size);
+
+  };
+
   iter.for_each(loop);
 }
 
@@ -269,6 +360,25 @@ struct HelperInterpLinear : public HelperInterpBase<index_t, scalar_t> {
 
     scalar_t scale = area_pixel_compute_scale<scalar_t>(input_size, output_size, align_corners, opt_scale);
 
+    if (antialias && scale > 1.0) {
+#ifdef VERBOSE
+      std::cout << "-> Antialias option: scale=" << scale << std::endl;
+#endif
+      return _compute_indices_weights_aa(
+        input_size, output_size, stride, ndims, reshape_dim, align_corners, scale
+      );
+    } else {
+      return _compute_indices_weights_no_aa(
+        input_size, output_size, stride, ndims, reshape_dim, align_corners, scale
+      );
+    }
+  }
+
+  static inline std::vector<Tensor> _compute_indices_weights_no_aa(
+    int64_t input_size, int64_t output_size, int64_t stride, int64_t ndims, int64_t reshape_dim,
+    bool align_corners, scalar_t scale
+  ) {
+
     std::vector<Tensor> output;
     HelperInterpLinear<index_t, scalar_t>::init_indices_weights(
       output, output_size, ndims, reshape_dim, HelperInterpLinear<index_t, scalar_t>::interp_size);
@@ -295,47 +405,116 @@ struct HelperInterpLinear : public HelperInterpBase<index_t, scalar_t> {
     return output;
   }
 
-  static inline std::vector<Tensor> compute_indices_weights_aa(
-    int64_t input_size, int64_t output_size, int64_t stride, int64_t ndims, int64_t reshape_dim,
-    bool align_corners, const c10::optional<double> opt_scale
-  ) {
+  // taken from https://github.com/python-pillow/Pillow/blob/6812205f18ca4ef54372e87e1a13ce4a859434df/
+  // src/libImaging/Resample.c#L20-L29
+  static inline scalar_t _filter(scalar_t x) {
+      if (x < 0.0) {
+          x = -x;
+      }
+      if (x < 1.0) {
+          return 1.0 - x;
+      }
+      return 0.0;
+  }
 
-    scalar_t scale = area_pixel_compute_scale<scalar_t>(input_size, output_size, align_corners, opt_scale);
+  static inline std::vector<Tensor> _compute_indices_weights_aa(
+    int64_t input_size, int64_t output_size, int64_t stride, int64_t ndims, int64_t reshape_dim,
+    bool align_corners, scalar_t scale
+  ) {
+    TORCH_INTERNAL_ASSERT(scale > 1.0)
 
     int interp_size = HelperInterpLinear<index_t, scalar_t>::interp_size;
-    if (scale > 1.0) {
-      interp_size = (int) ceilf((interp_size / 2) * scale) * 2 + 1;
-    }
+    scalar_t support = (interp_size / 2) * scale;
+    interp_size = (int) ceilf(support) * 2 + 1;
 
     std::vector<Tensor> output;
     auto new_shape = std::vector<int64_t>(ndims, 1);
     new_shape[reshape_dim] = output_size;
-    // bounds
-    output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<index_t>())));
-    output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<index_t>())));
-    // weights
+    // // bounds: xmin/xmax
+    // output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<index_t>())));
+    // output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<index_t>())));
+    // // weights
+    // for (int j=0; j<interp_size; j++) {
+    //   output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<scalar_t>())));
+    // }
+
     for (int j=0; j<interp_size; j++) {
+      output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<index_t>())));
       output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<scalar_t>())));
     }
 
-    scalar_t src_idx;
-    int64_t zero = static_cast<int64_t>(0);
+  //   scalar_t center, total_w, invscale = 1.0 / scale;
+  //   index_t zero = static_cast<index_t>(0);
+  //   int64_t * idx_ptr_xmin = output[0].data_ptr<index_t>();
+  //   int64_t * idx_ptr_xmax = output[1].data_ptr<index_t>();
+  //   scalar_t * wt_ptr;
+
+  //   int64_t xmin, xmax, j;
+
+  //   for (int64_t i=0; i<output_size; i++) {
+
+  //     center = scale * (i + 0.5);
+  //     xmin = std::max(static_cast<int64_t>(center - support + 0.5), zero);
+  //     xmax = std::min(static_cast<int64_t>(center + support + 0.5), input_size) - xmin;
+  //     idx_ptr_xmin[i] = xmin * stride;
+  //     idx_ptr_xmax[i] = xmax * stride;
+
+  //     total_w = 0.0;
+  //     for (j=0; j<xmax; j++) {
+  //       wt_ptr = output[2 + j].data_ptr<scalar_t>();
+  //       scalar_t w = _filter((j + xmin - center + 0.5) * invscale);
+  //       wt_ptr[i] = w;
+  //       total_w += w;
+  //     }
+  //     for (j=0; j<xmax; j++) {
+  //       wt_ptr = output[2 + j].data_ptr<scalar_t>();
+  //       if (total_w != 0.0) {
+  //         wt_ptr[i] /= total_w;
+  //       }
+  //     }
+  //     for (; j < interp_size; j++) {
+  //       wt_ptr = output[2 + j].data_ptr<scalar_t>();
+  //       wt_ptr[i] = static_cast<scalar_t>(0.0);
+  //     }
+  //   }
+  //   return output;
+  // }
+
+    scalar_t center, total_w, invscale = 1.0 / scale;
+    index_t zero = static_cast<index_t>(0);
     int64_t * idx_ptr;
     scalar_t * wt_ptr;
 
+    int64_t xmin, xmax, j;
     for (int64_t i=0; i<output_size; i++) {
 
-      src_idx = scale * (i + 0.5);
-      for (int j=0; j<interp_size; j++) {
+      center = scale * (i + 0.5);
+      xmin = std::max(static_cast<int64_t>(center - support + 0.5), zero);
+      xmax = std::min(static_cast<int64_t>(center + support + 0.5), input_size) - xmin;
+
+      total_w = 0.0;
+      for (j=0; j<xmax; j++) {
 
         idx_ptr = output[2 * j + 0].data_ptr<index_t>();
-        idx_ptr[i] = static_cast<int64_t>(std::max(
-          std::min(
-            src_idx  + j,
-            input_size - 1
-          ), zero)
-        ) * stride;
+        idx_ptr[i] = (xmin + j) * stride;
 
+        wt_ptr = output[2 * j + 1].data_ptr<scalar_t>();
+        scalar_t w = _filter((j + xmin - center + 0.5) * invscale);
+        wt_ptr[i] = w;
+        total_w += w;
+      }
+      for (j=0; j<xmax; j++) {
+        wt_ptr = output[2 * j + 1].data_ptr<scalar_t>();
+        if (total_w != 0.0) {
+          wt_ptr[i] /= total_w;
+        }
+      }
+      for (; j < interp_size; j++) {
+        idx_ptr = output[2 * j + 0].data_ptr<index_t>();
+        idx_ptr[i] = (xmin + j) * stride;
+
+        wt_ptr = output[2 * j + 1].data_ptr<scalar_t>();
+        wt_ptr[i] = static_cast<scalar_t>(0.0);
       }
     }
     return output;
@@ -411,6 +590,15 @@ void ti_upsample_generic_Nd_kernel_impl(
     }
   );
 
+#ifdef VERBOSE
+  std::cout << "Size of indices_weights: " << indices_weights.size() << std::endl;
+  int counter = 1;
+  for (auto & idx_weight: indices_weights) {
+    std::cout << "- dim " << counter << " size: " << idx_weight.size() << std::endl;
+    counter++;
+  }
+#endif
+
   TensorIteratorConfig config;
   config.check_all_same_dtype(false)
     .declare_static_dtype_and_device(input.scalar_type(), input.device())
@@ -425,19 +613,36 @@ void ti_upsample_generic_Nd_kernel_impl(
 
   auto iter = config.build();
 
-  if (interp_size > 1) {
-    // Nearest also supports uint8 tensor, so need to handle it separately
-    AT_DISPATCH_FLOATING_TYPES(
-        iter.dtype(), "upsample_generic_Nd", [&] {
-        constexpr int interp_size = F<index_t, scalar_t>::interp_size;
-        ti_cpu_upsample_generic<scalar_t, index_t, out_ndims, interp_size>(iter);
-    });
+  if (antialias) {
+    if (interp_size > 1) {
+      // Nearest also supports uint8 tensor, so need to handle it separately
+      AT_DISPATCH_FLOATING_TYPES(
+          iter.dtype(), "upsample_generic_Nd", [&] {
+          ti_cpu_upsample_generic_aa<scalar_t, index_t, out_ndims>(iter);
+      });
+    } else {
+      AT_DISPATCH_FLOATING_TYPES_AND(at::ScalarType::Byte,
+          iter.dtype(), "upsample_generic_Nd", [&] {
+          ti_cpu_upsample_generic_aa<scalar_t, index_t, out_ndims>(iter);
+      });
+    }
   } else {
-    AT_DISPATCH_FLOATING_TYPES_AND(at::ScalarType::Byte,
-        iter.dtype(), "upsample_generic_Nd", [&] {
-        ti_cpu_upsample_generic<scalar_t, index_t, out_ndims, interp_size>(iter);
-    });
+    if (interp_size > 1) {
+      // Nearest also supports uint8 tensor, so need to handle it separately
+      AT_DISPATCH_FLOATING_TYPES(
+          iter.dtype(), "upsample_generic_Nd", [&] {
+            constexpr int interp_size = F<index_t, scalar_t>::interp_size;
+            ti_cpu_upsample_generic<scalar_t, index_t, out_ndims, interp_size>(iter);
+      });
+    } else {
+      AT_DISPATCH_FLOATING_TYPES_AND(at::ScalarType::Byte,
+          iter.dtype(), "upsample_generic_Nd", [&] {
+            constexpr int interp_size = F<index_t, scalar_t>::interp_size;
+            ti_cpu_upsample_generic<scalar_t, index_t, out_ndims, interp_size>(iter);
+      });
+    }
   }
+
 }
 
 

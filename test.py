@@ -28,7 +28,10 @@ def proto_downsample(aa_interp_lin, img, size):
 
 if __name__ == "__main__":
 
-    aa_interp_lin_s0 = load(name="aa_interp_lin_s0", sources=["step_zero/extension_interpolate.cpp"], verbose=True)
+
+    proto_name = "aa_interp_lin_s0"
+    proto_src = "step_zero/extension_interpolate.cpp"
+    aa_interp_lin = load(name=proto_name, sources=[proto_src], verbose=True)
 
     pil_img = Image.open("data/test.png").convert("RGB")
     pil_img_dn = pil_img.resize(size, resample=2)
@@ -37,7 +40,7 @@ if __name__ == "__main__":
     t_img = torch.from_numpy(np.asarray(pil_img).copy().transpose((2, 0, 1)))
     pth_img_dn = pth_downsample(t_img, size)
 
-    proto_img_dn = proto_downsample(aa_interp_lin_s0, t_img, size)
+    proto_img_dn = proto_downsample(aa_interp_lin, t_img, size)
 
     mae = torch.mean(torch.abs(t_pil_img_dn.float() - pth_img_dn.float()))
     max_abs_err = torch.max(torch.abs(t_pil_img_dn.float() - pth_img_dn.float()))
@@ -48,3 +51,7 @@ if __name__ == "__main__":
     max_abs_err = torch.max(torch.abs(t_pil_img_dn.float() - proto_img_dn.float()))
     print("Proto vs PIL: Mean Absolute Error:", mae.item())
     print("Proto vs PIL: Max Absolute Error:", max_abs_err.item())
+
+    proto_pil_dn = Image.fromarray(proto_img_dn.permute(1, 2, 0).numpy())
+    proto_pil_dn.save(f"data/proto_{proto_name}_output.png")
+    print(f"Saved downsampled proto output: data/proto_{proto_name}_output.png")
