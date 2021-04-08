@@ -9,7 +9,7 @@
 
 
 #define USE_ALWAYS_INDEX64
-#define VERBOSE
+// #define VERBOSE
 
 
 namespace at {
@@ -430,6 +430,8 @@ struct HelperInterpLinear : public HelperInterpBase<index_t, scalar_t> {
     std::vector<Tensor> output;
     auto new_shape = std::vector<int64_t>(ndims, 1);
     new_shape[reshape_dim] = output_size;
+
+    // ---- Bounds approach as in PIL -----
     // // bounds: xmin/xmax
     // output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<index_t>())));
     // output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<index_t>())));
@@ -443,6 +445,7 @@ struct HelperInterpLinear : public HelperInterpBase<index_t, scalar_t> {
       output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<scalar_t>())));
     }
 
+  // ---- Bounds approach as in PIL -----
   //   scalar_t center, total_w, invscale = 1.0 / scale;
   //   index_t zero = static_cast<index_t>(0);
   //   int64_t * idx_ptr_xmin = output[0].data_ptr<index_t>();

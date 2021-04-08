@@ -37,9 +37,9 @@ center = (ox + 0.5) * scale
 xmin = max( round(center - support), 0 )
 ```
 
-Kernel values are computed as following
+Kernel values are computed using [triangle filtering (bilinear mode)](https://github.com/python-pillow/Pillow/blob/6812205f18ca4ef54372e87e1a13ce4a859434df/src/libImaging/Resample.c#L20-L29)
 ```
-
+kernel[x + k] = triangle(...)
 ```
 
 ## Step 0
@@ -69,6 +69,30 @@ PyTorch vs PIL: Max Absolute Error: 151.0
 Proto vs PIL: Mean Absolute Error: 0.5034226179122925
 Proto vs PIL: Max Absolute Error: 1.0
 Saved downsampled proto output: data/proto_aa_interp_lin_s0_output.png
+```
+
+```bash
+OMP_NUM_THREADS=6 PYTHONPATH=/pytorch/ python test.py --bench
+
+PyTorch vs PIL: Mean Absolute Error: 6.302572250366211
+PyTorch vs PIL: Max Absolute Error: 151.0
+Proto vs PIL: Mean Absolute Error: 0.5034226179122925
+Proto vs PIL: Max Absolute Error: 1.0
+Saved downsampled proto output: data/proto_aa_interp_lin_s0_output.png
+Torch config: PyTorch built with:
+  - GCC 9.3
+  - C++ Version: 201402
+  - OpenMP 201511 (a.k.a. OpenMP 4.5)
+  - CPU capability usage: AVX2
+  - Build settings: BUILD_TYPE=Release, CXX_COMPILER=/usr/lib/ccache/c++, CXX_FLAGS= -Wno-deprecated -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -fopenmp -DNDEBUG -DUSE_KINETO -DUSE_PYTORCH_QNNPACK -O2 -fPIC -Wno-narrowing -Wall -Wextra -Werror=return-type -Wno-missing-field-initializers -Wno-type-limits -Wno-array-bounds -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -Wno-unused-result -Wno-unused-local-typedefs -Wno-strict-overflow -Wno-strict-aliasing -Wno-error=deprecated-declarations -Wno-stringop-overflow -Wno-psabi -Wno-error=pedantic -Wno-error=redundant-decls -Wno-error=old-style-cast -fdiagnostics-color=always -faligned-new -Wno-unused-but-set-variable -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Werror=cast-function-type -Wno-stringop-overflow, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, PERF_WITH_AVX512=1, TORCH_VERSION=1.9.0, USE_CUDA=0, USE_CUDNN=OFF, USE_EIGEN_FOR_BLAS=ON, USE_EXCEPTION_PTR=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_MKL=OFF, USE_MKLDNN=OFF, USE_MPI=OFF, USE_NCCL=OFF, USE_NNPACK=0, USE_OPENMP=ON,
+
+Num threads: 6
+[---------- Downsampling: torch.Size([3, 438, 906]) -> (320, 196) -----------]
+                      |  PIL 8.1.2  |  1.9.0a0+git8518b0e  |  aa_interp_lin_s0
+6 threads: -------------------------------------------------------------------
+      channels_first  |     2.0     |         1.2          |        10.2
+
+Times are in milliseconds (ms).
 ```
 
 
