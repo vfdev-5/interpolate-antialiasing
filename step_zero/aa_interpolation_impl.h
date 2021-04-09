@@ -8,8 +8,9 @@
 #include <ATen/native/UpSample.h>
 
 
-#define USE_ALWAYS_INDEX64
+// #define USE_ALWAYS_INDEX64
 // #define VERBOSE
+#define USE_SEPARABLE_KERNEL
 
 
 namespace at {
@@ -176,7 +177,7 @@ template <int N, int non_zero_stride_dim, typename scalar_t, typename index_t, i
 struct CheckAlmostAllZeroStrides {
   static inline bool eval(const int64_t* strides) {
     // N is dim index: N -> dim0, N-1 -> dim1, ...
-    // non_zero_stride_dim should be out_dims - dim
+    // non_zero_stride_dim should be out_ndims - dim
     bool output;
     if (N == non_zero_stride_dim) {
       output = is_contiguous_stride<scalar_t, index_t, interp_size>(strides);
@@ -645,7 +646,165 @@ void ti_upsample_generic_Nd_kernel_impl(
       });
     }
   }
+}
 
+template <typename index_t, int out_ndims, typename scale_type, template<typename, typename> class F>
+void _ti_separable_upsample_generic_Nd_kernel_impl_single_dim(
+    Tensor& output,
+    const Tensor& input,
+    int interp_dim,
+    bool align_corners,
+    const scale_type& scales,
+    bool antialias) {
+
+  // input can be NCHW, NCL or NCKHW
+  auto shape = input.sizes().vec();
+  auto strides = input.strides().vec();
+  auto oshape = output.sizes();
+
+  // TORCH_INTERNAL_ASSERT(
+  //   shape.size() == oshape.size() && shape.size() == 2 + out_ndims
+  // );
+  // TORCH_INTERNAL_ASSERT(strides.size() == 2 + out_ndims);
+
+  // for (int i=0; i<out_ndims; i++) {
+  int out_ndims_ = 2;
+  for (int i=0; i<out_ndims_; i++) {
+    shape[i + 2] = oshape[i + 2];
+  }
+  strides[interp_dim] = 0;
+  auto restrided_input = input.as_strided(shape, strides);
+
+  std::vector<std::vector<Tensor>> indices_weights;
+
+  constexpr int interp_size = F<index_t, float>::interp_size;
+  auto input_scalar_type = input.scalar_type();
+
+  if (interp_size == 1 && input_scalar_type == at::ScalarType::Byte) {
+    // nearest also supports uint8 tensor, but we have to use float
+    // with compute_indices_weights
+    input_scalar_type = at::ScalarType::Float;
+  }
+
+  AT_DISPATCH_FLOATING_TYPES_AND(at::ScalarType::Byte,
+    input_scalar_type, "compute_indices_weights_generic", [&] {
+
+      indices_weights.emplace_back(
+        F<index_t, scalar_t>::compute_indices_weights(
+          input.size(interp_dim), oshape[interp_dim],
+          input.stride(interp_dim) * input.element_size(),
+          input.dim(), interp_dim, align_corners, scales[interp_dim - 2],
+          antialias
+        )
+      );
+    }
+  );
+
+#ifdef VERBOSE
+  std::cout << "Size of indices_weights: " << indices_weights.size() << std::endl;
+  int counter = 1;
+  for (auto & idx_weight: indices_weights) {
+    std::cout << "- dim " << counter << " size: " << idx_weight.size() << std::endl;
+    counter++;
+  }
+#endif
+
+  TensorIteratorConfig config;
+  config.check_all_same_dtype(false)
+    .declare_static_dtype_and_device(input.scalar_type(), input.device())
+    .add_output(output)
+    .add_input(restrided_input);
+
+  for (auto & idx_weight: indices_weights) {
+    for (auto& tensor : idx_weight) {
+      config.add_input(tensor);
+    }
+  }
+
+  auto iter = config.build();
+  if (antialias) {
+    if (interp_size > 1) {
+      // Nearest also supports uint8 tensor, so need to handle it separately
+      AT_DISPATCH_FLOATING_TYPES(
+          iter.dtype(), "upsample_generic_Nd", [&] {
+          ti_cpu_upsample_generic_aa<scalar_t, index_t, out_ndims>(iter);
+      });
+    } else {
+      AT_DISPATCH_FLOATING_TYPES_AND(at::ScalarType::Byte,
+          iter.dtype(), "upsample_generic_Nd", [&] {
+          ti_cpu_upsample_generic_aa<scalar_t, index_t, out_ndims>(iter);
+      });
+    }
+  } else {
+    if (interp_size > 1) {
+      // Nearest also supports uint8 tensor, so need to handle it separately
+      AT_DISPATCH_FLOATING_TYPES(
+          iter.dtype(), "upsample_generic_Nd", [&] {
+            constexpr int interp_size = F<index_t, scalar_t>::interp_size;
+            ti_cpu_upsample_generic<scalar_t, index_t, out_ndims, interp_size>(iter);
+      });
+    } else {
+      AT_DISPATCH_FLOATING_TYPES_AND(at::ScalarType::Byte,
+          iter.dtype(), "upsample_generic_Nd", [&] {
+            constexpr int interp_size = F<index_t, scalar_t>::interp_size;
+            ti_cpu_upsample_generic<scalar_t, index_t, out_ndims, interp_size>(iter);
+      });
+    }
+  }
+
+}
+
+
+template <typename index_t, int out_ndims, typename scale_type, template<typename, typename> class F>
+void ti_separable_upsample_generic_Nd_kernel_impl(
+    Tensor& output,
+    const Tensor& input,
+    bool align_corners,
+    const scale_type& scales,
+    bool antialias) {
+
+#ifdef VERBOSE
+  TI_BASIC_LOOP_CHANNELS_FIRST_TRIGGERED = 0;
+  TI_BASIC_LOOP_CHANNELS_LAST_TRIGGERED = 0;
+  TI_BASIC_LOOP_FALLBACK_TRIGGERED = 0;
+  TI_SHOW_STRIDES = true;
+
+
+  std::cout << "\n--- ti_separable_upsample_generic_Nd_kernel_impl: "<< std::endl;
+  std::cout << "\nInput tensor: " << input.sizes() << std::endl;
+  std::cout << "Input is_contiguous memory_format torch.channels_last: " << (input.is_contiguous(at::MemoryFormat::ChannelsLast) ? "true" : "false") << std::endl;
+  std::cout << "Input is_contiguous memory_format torch.channels_last_3d: " << (input.is_contiguous(at::MemoryFormat::ChannelsLast3d) ? "true" : "false") << std::endl;
+  std::cout << "Input is_contiguous : " << (input.is_contiguous() ? "true" : "false") << std::endl;
+
+  std::cout << "\nOutput tensor: " << output.sizes() << std::endl;
+  std::cout << "Output is_contiguous memory_format torch.channels_last: " << (output.is_contiguous(at::MemoryFormat::ChannelsLast) ? "true" : "false") << std::endl;
+  std::cout << "Output is_contiguous memory_format torch.channels_last_3d: " << (output.is_contiguous(at::MemoryFormat::ChannelsLast3d) ? "true" : "false") << std::endl;
+  std::cout << "Output is_contiguous : " << (output.is_contiguous() ? "true" : "false") << std::endl;
+#endif
+
+  auto temp_oshape = input.sizes().vec();
+  at::Tensor temp_output, temp_input = input;
+  // for (int i=0; i<out_ndims-1; i++) {
+  constexpr int i = 0;
+  int interp_dim = 2 + out_ndims - 1 - i;
+  temp_oshape[interp_dim] = output.sizes()[interp_dim];
+  temp_output = at::empty(temp_oshape);
+#ifdef VERBOSE
+  std::cout << temp_input.sizes() << "->" << temp_output.sizes() << std::endl;
+#endif
+  _ti_separable_upsample_generic_Nd_kernel_impl_single_dim<index_t, 1, scale_t, HelperInterpLinear>(
+    temp_output, temp_input, interp_dim, align_corners, scales, antialias
+  );
+  temp_input = temp_output;
+  // }
+
+  #ifdef VERBOSE
+    std::cout << temp_input.sizes() << "->" << output.sizes() << std::endl;
+    TI_SHOW_STRIDES = true;
+  #endif
+  _ti_separable_upsample_generic_Nd_kernel_impl_single_dim<index_t, 1, scale_t, HelperInterpLinear>(
+    output, temp_input, 2, align_corners, scales, antialias
+  );
 }
 
 
@@ -659,17 +818,22 @@ void _ti_upsample_bilinear2d_kernel_impl(
     c10::optional<double> scales_w,
     bool antialias) {
 
-#ifndef USE_ALWAYS_INDEX64
-  if (canUse32BitIndexMath(input)) {
-    ti_upsample_generic_Nd_kernel_impl<int32_t, 2, scale_t, HelperInterpLinear>(
-      output, input, align_corners, {scales_h, scales_w}, antialias);
-  } else {
-    ti_upsample_generic_Nd_kernel_impl<int64_t, 2, scale_t, HelperInterpLinear>(
-      output, input, align_corners, {scales_h, scales_w}, antialias);
-  }
-#else
+#ifdef USE_ALWAYS_INDEX64
   ti_upsample_generic_Nd_kernel_impl<int64_t, 2, scale_t, HelperInterpLinear>(
     output, input, align_corners, {scales_h, scales_w}, antialias);
+#elif defined USE_SEPARABLE_KERNEL
+  ti_separable_upsample_generic_Nd_kernel_impl<int64_t, 2, scale_t, HelperInterpLinear>(
+    output, input, align_corners, {scales_h, scales_w}, antialias);
+#else
+
+  #error "NOT IMPLEMENTED"
+  // if (canUse32BitIndexMath(input)) {
+  //   ti_upsample_generic_Nd_kernel_impl<int32_t, 2, scale_t, HelperInterpLinear>(
+  //     output, input, align_corners, {scales_h, scales_w}, antialias);
+  // } else {
+  //   ti_upsample_generic_Nd_kernel_impl<int64_t, 2, scale_t, HelperInterpLinear>(
+  //     output, input, align_corners, {scales_h, scales_w}, antialias);
+  // }
 #endif
 }
 

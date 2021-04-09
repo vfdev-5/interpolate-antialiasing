@@ -40,15 +40,17 @@ if __name__ == "__main__":
 
     proto_name = "aa_interp_lin_s0"
     proto_src = "step_zero/extension_interpolate.cpp"
-    aa_interp_lin = load(name=proto_name, sources=[proto_src], verbose=True)
+    aa_interp_lin = load(name=proto_name, sources=[proto_src], verbose=True, extra_cflags=["-O3", ])
 
     pil_img = Image.open("data/test.png").convert("RGB")
     pil_img_dn = pil_img.resize(size, resample=2)
     t_pil_img_dn = torch.from_numpy(np.asarray(pil_img_dn).copy().transpose((2, 0, 1)))
 
-    t_img = torch.from_numpy(np.asarray(pil_img).copy().transpose((2, 0, 1)))
-    pth_img_dn = pth_downsample(t_img, size)
+    t_img = torch.from_numpy(np.asarray(pil_img).copy().transpose((2, 0, 1))).contiguous()
+    print("mem_format: ", "channels_last" if t_img.is_contiguous(memory_format=torch.channels_last) else "channels_first")
+    print("is_contiguous: ", t_img.is_contiguous())
 
+    pth_img_dn = pth_downsample(t_img, size)
     proto_img_dn = proto_downsample(aa_interp_lin, t_img, size)
 
     mae = torch.mean(torch.abs(t_pil_img_dn.float() - pth_img_dn.float()))
@@ -69,9 +71,12 @@ if __name__ == "__main__":
         print(f"Torch config: {torch.__config__.show()}")
         print(f"Num threads: {torch.get_num_threads()}")
 
-        label = f"Downsampling: {t_img.shape} -> {size}"
         mem_format = "channels_last" if t_img.is_contiguous(memory_format=torch.channels_last) else "channels_first"
-        min_run_time = 2
+        is_contiguous = "contiguous" if t_img.is_contiguous() else "non-contiguous"
+
+        label = f"Downsampling: {t_img.shape} -> {size}"
+        sub_label = f"{mem_format} {is_contiguous}"
+        min_run_time = 3
 
         results = [
             benchmark.Timer(
@@ -83,7 +88,7 @@ if __name__ == "__main__":
                 },
                 num_threads=torch.get_num_threads(),
                 label=label,
-                sub_label=f"{mem_format}",
+                sub_label=sub_label,
                 description=f"PIL {PIL.__version__}",
             ).blocked_autorange(min_run_time=min_run_time),
 
@@ -97,7 +102,7 @@ if __name__ == "__main__":
                 },
                 num_threads=torch.get_num_threads(),
                 label=label,
-                sub_label=f"{mem_format}",
+                sub_label=sub_label,
                 description=f"{torch.version.__version__}",
             ).blocked_autorange(min_run_time=min_run_time),
 
@@ -112,7 +117,7 @@ if __name__ == "__main__":
                 },
                 num_threads=torch.get_num_threads(),
                 label=label,
-                sub_label=f"{mem_format}",
+                sub_label=sub_label,
                 description=proto_name,
             ).blocked_autorange(min_run_time=min_run_time),
         ]
