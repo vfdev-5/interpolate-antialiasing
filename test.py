@@ -36,11 +36,17 @@ if __name__ == "__main__":
         "--bench", action="store_true",
         help="Run time benchmark"
     )
+    parser.add_argument(
+        "--step", default="step_one", type=str,
+        choices=["step_zero", "step_one"],
+        help="Run time benchmark"
+    )
+
     args = parser.parse_args()
 
-    proto_name = "aa_interp_lin_s0"
-    proto_src = "step_zero/extension_interpolate.cpp"
-    aa_interp_lin = load(name=proto_name, sources=[proto_src], verbose=True, extra_cflags=["-O3", ])
+    proto_name = f"aa_interp_lin_{args.step}"
+    proto_src = f"{args.step}/extension_interpolate.cpp"
+    aa_interp_lin = load(name=proto_name, sources=[proto_src], verbose=True, extra_cflags=["-O3",])
 
     pil_img = Image.open("data/test.png").convert("RGB")
     pil_img_dn = pil_img.resize(size, resample=2)
@@ -119,7 +125,7 @@ if __name__ == "__main__":
                 label=label,
                 sub_label=sub_label,
                 description=proto_name,
-            ).blocked_autorange(min_run_time=min_run_time),
+            ).blocked_autorange(min_run_time=min_run_time * 2),
         ]
         compare = benchmark.Compare(results)
         compare.print()
