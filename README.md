@@ -180,7 +180,7 @@ Result 1 : cxxflag: `-O3` and separable version, indices as bounds
 We are using PIL-SIMD here
 
 ```bash
-OMP_NUM_THREADS=1 PYTHONPATH=/pytorch/ python test.py --bench
+OMP_NUM_THREADS=1 PYTHONPATH=/pytorch/ python test.py --bench --step=step_one
 
 mem_format:  channels_first
 is_contiguous:  True
@@ -203,7 +203,7 @@ Times are in microseconds (us).
 ```
 
 ```bash
-OMP_NUM_THREADS=6 PYTHONPATH=/pytorch/ python test.py --bench
+OMP_NUM_THREADS=6 PYTHONPATH=/pytorch/ python test.py --bench --step=step_one
 
 mem_format:  channels_first
 is_contiguous:  True
@@ -224,6 +224,71 @@ Num threads: 6
                                  |  PIL 7.0.0.post3  |  1.9.0a0+gitb5647dd  |  aa_interp_lin_step_one
 6 threads: ------------------------------------------------------------------------------------------
       channels_first contiguous  |       345.7       |        155.0         |          989.0
+
+Times are in microseconds (us).
+```
+
+</details>
+
+
+## Step 2
+
+
+<details>
+
+<summary>
+Result : cxxflag: `-O3` and separable version, indices as bounds, single weights tensor
+</summary>
+
+We are using PIL-SIMD here
+
+```bash
+OMP_NUM_THREADS=1 PYTHONPATH=/pytorch/ python test.py --bench --step=step_two
+
+mem_format:  channels_firstis_contiguous:  TruePyTorch vs PIL: Mean Absolute Error: 6.302402019500732
+PyTorch vs PIL: Max Absolute Error: 151.0
+Proto vs PIL: Mean Absolute Error: 0.5035501718521118
+Proto vs PIL: Max Absolute Error: 1.0
+Saved downsampled proto output: data/proto_aa_interp_lin_step_two_output.png
+Torch config: PyTorch built with:
+  - GCC 9.3
+  - C++ Version: 201402
+  - OpenMP 201511 (a.k.a. OpenMP 4.5)
+  - CPU capability usage: AVX2
+  - Build settings: BUILD_TYPE=Release, CXX_COMPILER=/usr/lib/ccache/c++, CXX_FLAGS= -Wno-deprecated -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -fopenmp -DNDEBUG -DUSE_KINETO -DUSE_PYTORCH_QNNPACK -O2 -fPIC -Wno-narrowing -Wall -Wextra -Werror=return-type -Wno-missing-field-initializers -Wno-type-limits -Wno-array-bounds -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -Wno-unused-result -Wno-unused-local-typedefs -Wno-strict-overflow -Wno-strict-aliasing -Wno-error=deprecated-declarations -Wno-stringop-overflow -Wno-psabi -Wno-error=pedantic -Wno-error=redundant-decls -Wno-error=old-style-cast -fdiagnostics-color=always -faligned-new -Wno-unused-but-set-variable -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Werror=cast-function-type -Wno-stringop-overflow, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, PERF_WITH_AVX512=1, TORCH_VERSION=1.9.0, USE_CUDA=0, USE_CUDNN=OFF, USE_EIGEN_FOR_BLAS=ON, USE_EXCEPTION_PTR=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_MKL=OFF, USE_MKLDNN=OFF, USE_MPI=OFF,
+USE_NCCL=OFF, USE_NNPACK=0, USE_OPENMP=ON,
+
+Num threads: 1
+[---------------------- Downsampling: torch.Size([3, 438, 906]) -> (320, 196) ----------------------]
+                                 |  PIL 7.0.0.post3  |  1.9.0a0+gitb5647dd  |  aa_interp_lin_step_two
+1 threads: ------------------------------------------------------------------------------------------
+      channels_first contiguous  |       345.9       |        670.7         |          2927.0
+
+Times are in microseconds (us).
+```
+
+```bash
+OMP_NUM_THREADS=6 PYTHONPATH=/pytorch/ python test.py --bench --step=step_two
+
+mem_format:  channels_first
+is_contiguous:  True
+PyTorch vs PIL: Mean Absolute Error: 6.302402019500732
+PyTorch vs PIL: Max Absolute Error: 151.0
+Proto vs PIL: Mean Absolute Error: 0.5035501718521118
+Proto vs PIL: Max Absolute Error: 1.0
+Saved downsampled proto output: data/proto_aa_interp_lin_step_two_output.png
+Torch config: PyTorch built with:
+  - GCC 9.3
+  - C++ Version: 201402
+  - OpenMP 201511 (a.k.a. OpenMP 4.5)
+  - CPU capability usage: AVX2
+  - Build settings: BUILD_TYPE=Release, CXX_COMPILER=/usr/lib/ccache/c++, CXX_FLAGS= -Wno-deprecated -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -fopenmp -DNDEBUG -DUSE_KINETO -DUSE_PYTORCH_QNNPACK -O2 -fPIC -Wno-narrowing -Wall -Wextra -Werror=return-type -Wno-missing-field-initializers -Wno-type-limits -Wno-array-bounds -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -Wno-unused-result -Wno-unused-local-typedefs -Wno-strict-overflow -Wno-strict-aliasing -Wno-error=deprecated-declarations -Wno-stringop-overflow -Wno-psabi -Wno-error=pedantic -Wno-error=redundant-decls -Wno-error=old-style-cast -fdiagnostics-color=always -faligned-new -Wno-unused-but-set-variable -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Werror=cast-function-type -Wno-stringop-overflow, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, PERF_WITH_AVX512=1, TORCH_VERSION=1.9.0, USE_CUDA=0, USE_CUDNN=OFF, USE_EIGEN_FOR_BLAS=ON, USE_EXCEPTION_PTR=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_MKL=OFF, USE_MKLDNN=OFF, USE_MPI=OFF, USE_NCCL=OFF, USE_NNPACK=0, USE_OPENMP=ON,
+
+Num threads: 6
+[---------------------- Downsampling: torch.Size([3, 438, 906]) -> (320, 196) ----------------------]
+                                 |  PIL 7.0.0.post3  |  1.9.0a0+gitb5647dd  |  aa_interp_lin_step_two
+6 threads: ------------------------------------------------------------------------------------------
+      channels_first contiguous  |       341.7       |        154.1         |          574.9
 
 Times are in microseconds (us).
 ```

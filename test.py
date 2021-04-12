@@ -38,7 +38,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--step", default="step_one", type=str,
-        choices=["step_zero", "step_one"],
+        choices=["step_zero", "step_one", "step_two"],
         help="Run time benchmark"
     )
 
