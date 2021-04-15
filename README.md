@@ -307,3 +307,14 @@ Times are in microseconds (us).
 - https://medium.com/@wenrudong/what-is-opencvs-inter-area-actually-doing-282a626a09b3
 
 - https://github.com/python-pillow/Pillow/blob/6812205f18ca4ef54372e87e1a13ce4a859434df/src/libImaging/Resample.c#L196-L203
+
+
+## Time Profiling
+
+```bash
+pip install py-spy
+```
+
+```bash
+OMP_NUM_THREADS=1 PYTHONPATH=/pytorch/ py-spy record --native -o profile.svg -- python test.py --step=step_two
+```

@@ -2,6 +2,7 @@
 # Created by https://www.toptal.com/developers/gitignore/api/c++,python
 # Edit at https://www.toptal.com/developers/gitignore?templates=c++,python
 
+FlameGraph
 new_build*
 asan_build*
 build*

@@ -1,4 +1,3 @@
-#include <torch/extension.h>
 
 #include <cmath>
 #include <vector>
@@ -55,7 +54,7 @@ static inline scalar_t interpolate_aa_single_dim(char* src, char** data, const i
   index_t ids_stride = *(index_t*)&data[2][i * strides[2]];
   // Using const stride can give a small speed-up: ~2687.8 us vs ~2927.0 us
   // However, we can't replace it everywhere ...
-  // constexpr index_t stride = sizeof(scalar_t);
+  // constexpr index_t ids_stride = sizeof(scalar_t);
 
   scalar_t t = *(scalar_t *)&src[ids_min];
   index_t wts_idx = *(index_t*)&data[4][i * strides[4]];
