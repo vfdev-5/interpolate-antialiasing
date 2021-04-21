@@ -7,11 +7,6 @@
 #include <ATen/native/UpSample.h>
 
 // #define VERBOSE
-// #define USE_SEPARABLE_KERNEL
-
-#ifdef USE_SEPARABLE_KERNEL
-#include "aa_separable_single_dim_loop2d_impl.h"
-#endif
 
 namespace at {
 namespace native {
@@ -22,7 +17,6 @@ using at::native::upsample::compute_output_size;
 using at::native::upsample::get_scale_value;
 using scale_t = std::vector<c10::optional<double>>;
 
-#ifndef USE_SEPARABLE_KERNEL
 
 #ifdef VERBOSE
 static int TI_BASIC_LOOP_CHANNELS_FIRST_TRIGGERED = 0;
@@ -52,59 +46,37 @@ static inline bool is_contiguous_stride(const int64_t* strides) {
 }
 
 
-static int TI_ids_size = 0;
-
 template <int n, typename scalar_t, typename index_t>
 struct InterpolateAA {
     static inline scalar_t eval(char* src, char** data, const int64_t* strides, int64_t i) {
 
-      const index_t ids_min = *(index_t*)&data[0][i * strides[0]];
-      const index_t ids_size = *(index_t*)&data[1][i * strides[1]];
-      const index_t ids_stride = *(index_t*)&data[2][i * strides[2]];
-
-#ifdef VERBOSE
-      if (TI_ids_size < 10) {
-        std::cout << "outer ids_size: " << ids_size << std::endl;
-        TI_ids_size++;
-      }
-#endif
+      const index_t ids_idx = *(index_t*)&data[0][i * strides[0]];
+      const index_t ids_min = *(index_t*)&data[1][ids_idx];
+      const index_t ids_size = *(index_t*)&data[1][ids_idx + sizeof(index_t)];
+      const index_t ids_stride = *(index_t*)&data[1][ids_idx + sizeof(index_t) + sizeof(index_t)];
 
       char * src_min = src + ids_min;
 
       scalar_t t = InterpolateAA<n - 1, scalar_t, index_t>::eval(
-          src_min, &data[3 + 2], &strides[3 + 2], i);
+          src_min, &data[2 + 2], &strides[2 + 2], i);
 
-      index_t wts_idx = *(index_t*)&data[4][i * strides[4]];
+      const index_t wts_idx = *(index_t*)&data[2][i * strides[2]];
       char * wts_ptr = &data[3][wts_idx];
       scalar_t wts = *(scalar_t*)&wts_ptr[0];
       scalar_t output = t * wts;
 
       index_t j = 1;
-
-      // All: <2 static + remaining dynamic => 2757.6 | 2433.8  (avx, avx2, fma)
-      // All dynamic => 2989.5 | 2660.8 (avx, avx2, fma)
-      // All static = 7: 3365.1 | 3037.5 (avx, avx2, fma)
-      // All static = 5: 1998.0 | 1673.9 (avx, avx2, fma) [INCORRECT RESULT]
-      // All static = 6: 2519.5 | 2190.7 (avx, avx2, fma)
-
       for (; j < 2; j++) {
-        wts = *(scalar_t*)&data[3][wts_idx + j * sizeof(scalar_t)];
+        wts = *(scalar_t*)&wts_ptr[j * sizeof(scalar_t)];
         t = InterpolateAA<n - 1, scalar_t, index_t>::eval(
-            src + ids_min + j * ids_stride, &data[3 + 2], &strides[3 + 2], i);
+            src + ids_min + j * ids_stride, &data[2 + 2], &strides[2 + 2], i);
         output += t * wts;
       }
-
-      // for (; j < 6; j++) {
-      //   wts = *(scalar_t*)&data[3][wts_idx + j * sizeof(scalar_t)];
-      //   t = InterpolateAA<n - 1, scalar_t, index_t>::eval(
-      //       src + ids_min + j * ids_stride, &data[3 + 2], &strides[3 + 2], i);
-      //   output += t * wts;
-      // }
 
       for (; j<ids_size; j++) {
         wts = *(scalar_t*)&wts_ptr[j * sizeof(scalar_t)];
         t = InterpolateAA<n - 1, scalar_t, index_t>::eval(
-            src_min + j * ids_stride, &data[3 + 2], &strides[3 + 2], i);
+            src_min + j * ids_stride, &data[2 + 2], &strides[2 + 2], i);
         output += t * wts;
       }
 
@@ -115,43 +87,30 @@ struct InterpolateAA {
 template <typename scalar_t, typename index_t>
 struct InterpolateAA<1, scalar_t, index_t> {
     static inline scalar_t eval(char* src, char** data, const int64_t* strides, int64_t i) {
-      const index_t ids_min = *(index_t*)&data[0][i * strides[0]];
-      const index_t ids_size = *(index_t*)&data[1][i * strides[1]];
-      // ids stride is constant for the given dim
-      const index_t ids_stride = *(index_t*)&data[2][i * strides[2]];
 
-#ifdef VERBOSE
-      if (TI_ids_size < 10) {
-        std::cout << "inner ids_size: " << ids_size << std::endl;
-        TI_ids_size++;
-      }
-#endif
+      const index_t ids_idx = *(index_t*)&data[0][i * strides[0]];
+      const index_t ids_min = *(index_t*)&data[1][ids_idx];
+      const index_t ids_size = *(index_t*)&data[1][ids_idx + sizeof(index_t)];
+      const index_t ids_stride = *(index_t*)&data[1][ids_idx + sizeof(index_t) + sizeof(index_t)];
 
       char * src_min = src + ids_min;
 
       scalar_t t = *(scalar_t *)&src_min[0];
-      index_t wts_idx = *(index_t*)&data[4][i * strides[4]];
+      const index_t wts_idx = *(index_t*)&data[2][i * strides[2]];
       char * wts_ptr = &data[3][wts_idx];
       scalar_t wts = *(scalar_t*)&wts_ptr[0];
       scalar_t output = t * wts;
 
       index_t j = 1;
       for (; j < 2; j++) {
-        wts = *(scalar_t*)&data[3][wts_idx + j * sizeof(scalar_t)];
+        wts = *(scalar_t*)&wts_ptr[j * sizeof(scalar_t)];
         t = *(scalar_t *)&src[ids_min + j * ids_stride];
         output += t * wts;
       }
 
-      // for (; j < 6; j++) {
-      //   wts = *(scalar_t*)&data[3][wts_idx + j * sizeof(scalar_t)];
-      //   t = *(scalar_t *)&src[ids_min + j * ids_stride];
-      //   output += t * wts;
-      // }
-
       for (; j<ids_size; j++) {
         wts = *(scalar_t*)&wts_ptr[j * sizeof(scalar_t)];
         t = *(scalar_t *)&src_min[j * ids_stride];
-        // Very expensive: 393.3 -> 1469.5
         output += t * wts;
       }
       return output;
@@ -171,14 +130,14 @@ struct CheckAlmostAllZeroStrides {
     // non_zero_stride_dim should be out_ndims - dim
     bool output;
     if (N == non_zero_stride_dim) {
-      output = is_contiguous_stride<index_t, 3>(strides);
-      output &= ((strides[3] == 0) && (strides[4] == sizeof(index_t)));
+      output = ((strides[1] == 0) && (strides[0] == sizeof(index_t)));
+      output &= ((strides[3] == 0) && (strides[2] == sizeof(index_t)));
     } else {
-      output = is_zero_stride<3 + 2>(strides);
+      output = is_zero_stride<2 + 2>(strides);
     }
     return output &&
       CheckAlmostAllZeroStrides<N - 1, non_zero_stride_dim, index_t>::eval(
-        &strides[3 + 2]);
+        &strides[2 + 2]);
   }
 };
 
@@ -222,7 +181,7 @@ void ti_cpu_upsample_generic_aa(at::TensorIterator& iter, const int interp_sizes
         << strides[0] << " "
         << strides[1] << " | ";
 
-      constexpr int m = 3 + 2;
+      constexpr int m = 2 + 2;
       for (int i=0; i<out_ndims; i++) {
         for (int j=0; j<m; j++) {
           std::cout << strides[m * i + j + 2] << " ";
@@ -247,7 +206,7 @@ void ti_cpu_upsample_generic_aa(at::TensorIterator& iter, const int interp_sizes
     if (
       (strides[0] == sizeof(scalar_t))
       && (strides[1] == 0)
-      // Check if strides for 3 indices and 2 weights are zeros for all dimensions except out_dims - 1
+      // Check if strides for 2 indices and 2 weights are zeros for all dimensions except out_dims - 1
       && check_almost_all_zero_stride<out_ndims, 1, index_t>(&strides[2]))
     {
       // contiguous channels-first case
@@ -359,13 +318,24 @@ struct HelperInterpLinear : public HelperInterpBase<index_t, scalar_t> {
     auto new_shape = std::vector<int64_t>(ndims, 1);
     new_shape[reshape_dim] = output_size;
 
-    // ---- Bounds approach as in PIL -----
-    // bounds: xmin/xmax
-    output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<index_t>())));
-    output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<index_t>())));
-    output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<index_t>())));
+    // ---- Bounds approach (as in PIL) in a single tensor -----
+    // bounds for indices: indexer and xmin/max
+    {
+      // Indexer:
+      output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<index_t>())));
+      // Bounds:
+      new_shape[reshape_dim] = output_size * 3; // 3 <=> xmin, size, stride
+      auto indices = empty(new_shape, CPU(c10::CppTypeToScalarType<index_t>()));
+      auto strides = indices.strides().vec();
+      strides[reshape_dim] = 0;
+      new_shape[reshape_dim] = output_size;
+      indices = indices.as_strided(new_shape, strides);
+      output.emplace_back(indices);
+    }
 
     {
+      // Weights indices
+      output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<index_t>())));
       // Weights
       new_shape[reshape_dim] = output_size * interp_size;
       auto wts = empty(new_shape, CPU(c10::CppTypeToScalarType<scalar_t>()));
@@ -374,28 +344,29 @@ struct HelperInterpLinear : public HelperInterpBase<index_t, scalar_t> {
       new_shape[reshape_dim] = output_size;
       wts = wts.as_strided(new_shape, strides);
       output.emplace_back(wts);
-      // Weights indices
-      output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<index_t>())));
     }
 
     scalar_t center, total_w, invscale = 1.0 / scale;
     index_t zero = static_cast<index_t>(0);
-    int64_t * idx_ptr_xmin = output[0].data_ptr<index_t>();
-    int64_t * idx_ptr_size = output[1].data_ptr<index_t>();
-    int64_t * idx_ptr_stride = output[2].data_ptr<index_t>();
+
+    int64_t * idx_idx_ptr = output[0].data_ptr<index_t>();
+    int64_t * idx_ptr_xmin_size_stride = output[1].data_ptr<index_t>();
+
+    int64_t * wt_idx_ptr = output[2].data_ptr<index_t>();
     scalar_t * wt_ptr = output[3].data_ptr<scalar_t>();
-    int64_t * wt_idx_ptr = output[4].data_ptr<index_t>();
 
     int64_t xmin, xmax, j;
 
     for (int64_t i=0; i<output_size; i++) {
 
+      idx_idx_ptr[i] = i * 3 * sizeof(index_t);
+
       center = scale * (i + 0.5);
       xmin = std::max(static_cast<int64_t>(center - support + 0.5), zero);
       xmax = std::min(static_cast<int64_t>(center + support + 0.5), input_size) - xmin;
-      idx_ptr_xmin[i] = xmin * stride;
-      idx_ptr_size[i] = xmax;
-      idx_ptr_stride[i] = stride;
+      idx_ptr_xmin_size_stride[3 * i] = xmin * stride;
+      idx_ptr_xmin_size_stride[3 * i + 1] = xmax;
+      idx_ptr_xmin_size_stride[3 * i + 2] = stride;
 
       wt_idx_ptr[i] = i * interp_size * sizeof(scalar_t);
 
@@ -531,8 +502,6 @@ void ti_upsample_generic_Nd_kernel_impl(
   }
 }
 
-#endif
-
 // Below code is a C++ API for this main.cpp
 
 void _ti_upsample_bilinear2d_kernel_impl(
@@ -543,13 +512,8 @@ void _ti_upsample_bilinear2d_kernel_impl(
     c10::optional<double> scales_w,
     bool antialias) {
 
-#ifdef USE_SEPARABLE_KERNEL
-  ti_separable_upsample_generic_Nd_kernel_impl<int64_t, 2, scale_t, HelperInterpLinear>(
-    output, input, align_corners, {scales_h, scales_w}, antialias);
-#else
   ti_upsample_generic_Nd_kernel_impl<int64_t, 2, scale_t, HelperInterpLinear>(
     output, input, align_corners, {scales_h, scales_w}, antialias);
-#endif
 
 }
 
