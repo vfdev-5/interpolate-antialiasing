@@ -296,6 +296,85 @@ Times are in microseconds (us).
 </details>
 
 
+## Step 2.1
+
+<details>
+
+<summary>
+Result : cxxflag: `-O3` and separable version, indices as bounds, single weights tensor + optim tricks
+</summary>
+
+We are using PIL-SIMD here
+
+```bash
+OMP_NUM_THREADS=1 PYTHONPATH=/pytorch/ python test.py --bench --step=step_two_dot_one
+
+mem_format:  channels_first
+is_contiguous:  True
+PyTorch vs PIL: Mean Absolute Error: 6.302402019500732
+PyTorch vs PIL: Max Absolute Error: 151.0
+Proto vs PIL: Mean Absolute Error: 0.5035501718521118
+Proto vs PIL: Max Absolute Error: 1.0
+Saved downsampled proto output: data/proto_aa_interp_lin_step_two_dot_one_output.png
+Torch config: PyTorch built with:
+  - GCC 9.3
+  - C++ Version: 201402
+  - OpenMP 201511 (a.k.a. OpenMP 4.5)
+  - CPU capability usage: AVX2
+  - Build settings: BUILD_TYPE=Release, CXX_COMPILER=/usr/lib/ccache/c++, CXX_FLAGS= -Wno-deprecated -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -fopenmp -DNDEBUG -DUSE_KINETO -DUSE_PYTORCH_QNNPACK -O2 -fPIC -Wno-narrowing -Wall -Wextra -Werror=return-type -Wno-missing-field-initializers -Wno-type-limits -Wno-array-bounds -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -Wno-unused-result -Wno-unused-local-typedefs -Wno-strict-overflow -Wno-strict-aliasing -Wno-error=deprecated-declarations -Wno-stringop-overflow -Wno-psabi -Wno-error=pedantic -Wno-error=redundant-decls -Wno-error=old-style-cast -fdiagnostics-color=always -faligned-new -Wno-unused-but-set-variable -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Werror=cast-function-type -Wno-stringop-overflow, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, PERF_WITH_AVX512=1, TORCH_VERSION=1.9.0, USE_CUDA=0, USE_CUDNN=OFF, USE_EIGEN_FOR_BLAS=ON, USE_EXCEPTION_PTR=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_MKL=OFF, USE_MKLDNN=OFF, USE_MPI=OFF, USE_NCCL=OFF, USE_NNPACK=0, USE_OPENMP=ON,
+
+Num threads: 1
+[-------------------------------------------------------- Downsampling: torch.Size([3, 438, 906]) -> (320, 196) --------------------------------------------------------]
+                                 |  PIL 7.0.0.post3  |  1.9.0a0+gitb5647dd  |  aa_interp_lin_step_two_dot_one  |  aa_interp_lin_step_two_dot_one wo float/byte conversion
+1 threads: --------------------------------------------------------------------------------------------------------------------------------------------------------------
+      channels_first contiguous  |       333.3       |        659.9         |              2500.4              |                           2175.3
+
+Times are in microseconds (us).
+```
+
+</details>
+
+
+## Step 3
+
+<details>
+
+<summary>
+Result : cxxflag: `-O3` and single TI version with indices as bounds, single weights tensor + optim tricks
+</summary>
+
+We are using PIL-SIMD here
+
+```bash
+OMP_NUM_THREADS=1 PYTHONPATH=/pytorch/ python test.py --bench --step=step_three
+
+mem_format:  channels_first
+is_contiguous:  True
+PyTorch vs PIL: Mean Absolute Error: 6.302402019500732
+PyTorch vs PIL: Max Absolute Error: 151.0
+Proto vs PIL: Mean Absolute Error: 0.5035501718521118
+Proto vs PIL: Max Absolute Error: 1.0
+Saved downsampled proto output: data/proto_aa_interp_lin_step_two_dot_one_output.png
+Torch config: PyTorch built with:
+  - GCC 9.3
+  - C++ Version: 201402
+  - OpenMP 201511 (a.k.a. OpenMP 4.5)
+  - CPU capability usage: AVX2
+  - Build settings: BUILD_TYPE=Release, CXX_COMPILER=/usr/lib/ccache/c++, CXX_FLAGS= -Wno-deprecated -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -fopenmp -DNDEBUG -DUSE_KINETO -DUSE_PYTORCH_QNNPACK -O2 -fPIC -Wno-narrowing -Wall -Wextra -Werror=return-type -Wno-missing-field-initializers -Wno-type-limits -Wno-array-bounds -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -Wno-unused-result -Wno-unused-local-typedefs -Wno-strict-overflow -Wno-strict-aliasing -Wno-error=deprecated-declarations -Wno-stringop-overflow -Wno-psabi -Wno-error=pedantic -Wno-error=redundant-decls -Wno-error=old-style-cast -fdiagnostics-color=always -faligned-new -Wno-unused-but-set-variable -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Werror=cast-function-type -Wno-stringop-overflow, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, PERF_WITH_AVX512=1, TORCH_VERSION=1.9.0, USE_CUDA=0, USE_CUDNN=OFF, USE_EIGEN_FOR_BLAS=ON, USE_EXCEPTION_PTR=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_MKL=OFF, USE_MKLDNN=OFF, USE_MPI=OFF, USE_NCCL=OFF, USE_NNPACK=0, USE_OPENMP=ON,
+
+Num threads: 1
+[-------------------------------------------------------- Downsampling: torch.Size([3, 438, 906]) -> (320, 196) --------------------------------------------------------]
+                                 |  PIL 7.0.0.post3  |  1.9.0a0+gitb5647dd  |  aa_interp_lin_step_two_dot_one  |  aa_interp_lin_step_two_dot_one wo float/byte conversion
+1 threads: --------------------------------------------------------------------------------------------------------------------------------------------------------------
+      channels_first contiguous  |       335.7       |        661.3         |              3069.2              |                           2744.7
+
+Times are in microseconds (us).
+```
+
+</details>
+
+
+
 
 
 ## Refs:
@@ -309,12 +388,49 @@ Times are in microseconds (us).
 - https://github.com/python-pillow/Pillow/blob/6812205f18ca4ef54372e87e1a13ce4a859434df/src/libImaging/Resample.c#L196-L203
 
 
-## Time Profiling
+
+## Development
+
+<details>
+
+<summary>
+Docker container setup
+</summary>
 
 ```bash
-pip install py-spy
+docker run --rm -it \
+    --name=tv-interpolate \
+    -v $PWD:/interpolate-antialiasing \
+    -w /interpolate-antialiasing \
+    --network=host --security-opt seccomp:unconfined --privileged --shm-size 16G \
+    nvidia/cuda:11.1-cudnn8-devel-ubuntu20.04 \
+    /bin/bash
 ```
 
-```bash
-OMP_NUM_THREADS=1 PYTHONPATH=/pytorch/ py-spy record --native -o profile.svg -- python test.py --step=step_two
 ```
+apt-get update && ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime && \
+    apt-get install -y tzdata && \
+    dpkg-reconfigure --frontend noninteractive tzdata && \
+    apt-get install -y git cmake python3 python3-pip numactl && \
+    ln -s /usr/bin/python3 /usr/bin/python && \
+    ln -s /usr/bin/pip3 /usr/bin/pip && \
+    pip install numpy typing_extensions Pillow ninja
+```
+
+- Install linux perf
+
+```
+echo "deb http://archive.ubuntu.com/ubuntu/ bionic main universe\n" >> /etc/apt/sources.list && \
+apt-get update && apt-get install -y linux-tools-4.15.0-20-generic linux-tools-4.15.0-20 linux-tools-4.15.0-20-lowlatency && \
+rm -rf /usr/bin/perf && \
+ln -s /usr/lib/linux-tools-4.15.0-20/perf /usr/bin/perf
+```
+
+- Install Pillow-SIMD
+
+```
+apt-get install -y libpng-dev libjpeg-turbo8-dev
+pip uninstall -y pillow && CC="cc -mavx2" pip install -U --force-reinstall pillow-simd
+```
+
+</details>

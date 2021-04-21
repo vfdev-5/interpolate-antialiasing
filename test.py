@@ -29,6 +29,15 @@ def proto_downsample(aa_interp_lin, img, size):
     return out[0, ...].byte()
 
 
+def proto_downsample_f32(aa_interp_lin, img, size):
+    out = aa_interp_lin.forward(
+        img,
+        size,
+        False,
+    )
+    return out[0, ...]
+
+
 def run_bench():
     # All variables are taken from __main__ scope
 
@@ -84,6 +93,21 @@ def run_bench():
             sub_label=sub_label,
             description=proto_name,
         ).blocked_autorange(min_run_time=min_run_time * 2),
+
+        benchmark.Timer(
+            # proto_downsample_f32(aa_interp_lin, t_img, size)
+            stmt=f"f(op, x, size)",
+            globals={
+                "x": t_img[None, ...].float(),
+                "size": inv_size,
+                "op": aa_interp_lin,
+                "f": proto_downsample_f32
+            },
+            num_threads=torch.get_num_threads(),
+            label=label,
+            sub_label=sub_label,
+            description=f"{proto_name} wo float/byte conversion",
+        ).blocked_autorange(min_run_time=min_run_time * 2),
     ]
     compare = benchmark.Compare(results)
     compare.print()
@@ -113,7 +137,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--step", default="step_one", type=str,
-        choices=["step_zero", "step_one", "step_two"],
+        choices=["step_zero", "step_one", "step_two", "step_two_dot_one", "step_three"],
         help="Run time benchmark"
     )
     parser.add_argument(
