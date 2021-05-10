@@ -10,6 +10,8 @@ import torch.utils.benchmark as benchmark
 sizes = [
     (320, 196),
     (120, 96),
+    (1200, 196),
+    (120, 1200),
 ]
 
 
@@ -146,6 +148,10 @@ if __name__ == "__main__":
         "--profile", action="store_true",
         help="Run time profiling"
     )
+    parser.add_argument(
+        "--flags", choices=["avx", "debug", ],
+        help="Define flags according to the choice"
+    )
 
     args = parser.parse_args()
 
@@ -154,8 +160,14 @@ if __name__ == "__main__":
 
     proto_name = f"aa_interp_lin_{args.step}"
     proto_src = f"{args.step}/extension_interpolate.cpp"
-    # extra_cflags = ["-O3", ]
-    extra_cflags = ["-O3", "-mfma", "-mavx", "-mavx2"]
+
+    if args.flags == "debug":
+        extra_cflags = ["-O0", "-g"]
+    elif args.flags == "avx":
+        extra_cflags = ["-O3", "-mfma", "-mavx", "-mavx2"]
+    else:
+        extra_cflags = ["-O3", ]
+
     aa_interp_lin = load(name=proto_name, sources=[proto_src], verbose=True, extra_cflags=extra_cflags)
 
     pil_img = Image.open("data/test.png").convert("RGB")

@@ -484,4 +484,34 @@ apt-get install -y libpng-dev libjpeg-turbo8-dev
 pip uninstall -y pillow && CC="cc -mavx2" pip install -U --force-reinstall pillow-simd
 ```
 
+
+- Debug segmentation faults
+
+```
+apt-get install gdb
+OMP_NUM_THREADS=1 PYTHONPATH=/pytorch/ gdb --args python test.py --step=step_two_dot_two
+
+b step_two_dot_two/aa_interpolation_impl.h:134
+run
+```
+
+- To activate `tui` : ctrl+x -> ctrl+a
+- To switch focus between window and cmd: `fs n`
+
+
+- Run torchvision test with ASAN
+
+```diff
+- extra_compile_args = {'cxx': []}
++ extra_compile_args = {'cxx': ["-fsanitize=address", "-fno-omit-frame-pointer"]}
+```
+
+```
+python setup.py develop
+```
+
+```bash
+LD_PRELOAD=/usr/lib/gcc/x86_64-linux-gnu/9/libasan.so python test_resize_aa.py
+```
+
 </details>

@@ -7,7 +7,7 @@
 #include <ATen/native/UpSample.h>
 
 
-// #define VERBOSE
+#define VERBOSE
 
 
 namespace at {
@@ -42,14 +42,35 @@ static inline scalar_t interpolate_aa_single_dim_zero_strides(char* src, char** 
   scalar_t output = t * wts;
   int j = 1;
 
-  // // Using partial loop unroll gives a small speed-up
-  // Partial unrolling like that can lead to heap-buffer-overflow
-  // for (; j<2; j++) {
-  //   wts = *(scalar_t*)&wts_ptr[j * sizeof(scalar_t)];
-  //   t = *(scalar_t *)&src_min[j * ids_stride];
-  //   output += t * wts;
-  // }
+  // Using partial loop unroll gives a small speed-up
+  for (; j<2; j++) {
+    wts = *(scalar_t*)&wts_ptr[j * sizeof(scalar_t)];
+    t = *(scalar_t *)&src_min[j * ids_stride];
+    output += t * wts;
+  }
   for (; j<ids_size; j++) {
+    wts = *(scalar_t*)&wts_ptr[j * sizeof(scalar_t)];
+    t = *(scalar_t *)&src_min[j * ids_stride];
+    output += t * wts;
+  }
+  return output;
+}
+
+template <typename scalar_t, typename index_t, int interp_size>
+static inline scalar_t static_interpolate_aa_single_dim_zero_strides(char* src, char** data, int64_t i, const index_t ids_stride) {
+
+  const index_t ids_min = *(index_t*)&data[0][0];
+
+  char * src_min = src + ids_min;
+
+  scalar_t t = *(scalar_t *)&src_min[0];
+  index_t wts_idx = *(index_t*)&data[4][0];
+  char * wts_ptr = &data[3][wts_idx];
+  scalar_t wts = *(scalar_t*)&wts_ptr[0];
+
+  scalar_t output = t * wts;
+  int j = 1;
+  for (; j<interp_size; j++) {
     wts = *(scalar_t*)&wts_ptr[j * sizeof(scalar_t)];
     t = *(scalar_t *)&src_min[j * ids_stride];
     output += t * wts;
@@ -72,12 +93,11 @@ static inline scalar_t interpolate_aa_single_dim(char* src, char** data, const i
 
   scalar_t output = t * wts;
   int j = 1 ;
-  // Partial unrolling like that can lead to heap-buffer-overflow
-  // for (; j<2; j++) {
-  //   wts = *(scalar_t*)&wts_ptr[j * sizeof(scalar_t)];
-  //   t = *(scalar_t *)&src_min[j * ids_stride];
-  //   output += t * wts;
-  // }
+  for (; j<2; j++) {
+    wts = *(scalar_t*)&wts_ptr[j * sizeof(scalar_t)];
+    t = *(scalar_t *)&src_min[j * ids_stride];
+    output += t * wts;
+  }
   for (; j<ids_size; j++) {
     wts = *(scalar_t*)&wts_ptr[j * sizeof(scalar_t)];
     t = *(scalar_t *)&src_min[j * ids_stride];
@@ -85,6 +105,30 @@ static inline scalar_t interpolate_aa_single_dim(char* src, char** data, const i
   }
   return output;
 }
+
+
+template <typename scalar_t, typename index_t, int interp_size>
+static inline scalar_t static_interpolate_aa_single_dim(char* src, char** data, const int64_t* strides, int64_t i, const index_t ids_stride) {
+
+  index_t ids_min = *(index_t*)&data[0][i * strides[0]];
+
+  char * src_min = src + ids_min;
+
+  scalar_t t = *(scalar_t *)&src_min[0];
+  index_t wts_idx = *(index_t*)&data[4][i * strides[4]];
+  char * wts_ptr = &data[3][wts_idx];
+  scalar_t wts = *(scalar_t*)&wts_ptr[0];
+
+  scalar_t output = t * wts;
+  int j = 1;
+  for (; j<interp_size; j++) {
+    wts = *(scalar_t*)&wts_ptr[j * sizeof(scalar_t)];
+    t = *(scalar_t *)&src_min[j * ids_stride];
+    output += t * wts;
+  }
+  return output;
+}
+
 
 template <typename scalar_t, typename index_t>
 static inline void basic_loop_aa_single_dim_zero_strides(char** data, const int64_t* strides, int64_t n) {
@@ -98,6 +142,28 @@ static inline void basic_loop_aa_single_dim_zero_strides(char** data, const int6
         src + i * strides[1], &data[2], i, ids_stride);
   }
 }
+
+
+template <typename scalar_t, typename index_t, int interp_size>
+static inline void static_basic_loop_aa_single_dim_zero_strides(char** data, const int64_t* strides, int64_t n) {
+  char* dst = data[0];
+  char* src = data[1];
+  // index stride is constant for the given dimension
+  const index_t ids_stride = *(index_t*)&data[2 + 2][0];
+
+#ifdef VERBOSE
+    if (TI_BASIC_LOOP_ZERO_STRIDES_TRIGGERED < 2) {
+      std::cout << "AA STATIC TI_BASIC_LOOP" << std::endl << std::flush;
+      TI_BASIC_LOOP_ZERO_STRIDES_TRIGGERED += 1;
+    }
+#endif
+
+  for (int64_t i = 0; i < n; i++) {
+    *(scalar_t*)&dst[i * strides[0]] = static_interpolate_aa_single_dim_zero_strides<scalar_t, index_t, interp_size>(
+        src + i * strides[1], &data[2], i, ids_stride);
+  }
+}
+
 
 template <typename scalar_t, typename index_t>
 static inline void basic_loop_aa_single_dim_nonzero_strides(char** data, const int64_t* strides, int64_t n) {
@@ -118,6 +184,35 @@ static inline void basic_loop_aa_single_dim_nonzero_strides(char** data, const i
     }
   }
 }
+
+
+template <typename scalar_t, typename index_t, int interp_size>
+static inline void static_basic_loop_aa_single_dim_nonzero_strides(char** data, const int64_t* strides, int64_t n) {
+  char* dst = data[0];
+  char* src = data[1];
+  // index stride is constant for the given dimension
+  const index_t ids_stride = *(index_t*)&data[2 + 2][0];
+
+#ifdef VERBOSE
+  if (TI_BASIC_LOOP_NONZERO_STRIDES_TRIGGERED < 2) {
+    std::cout << "AA STATIC TI_BASIC_LOOP" << std::endl << std::flush;
+    TI_BASIC_LOOP_NONZERO_STRIDES_TRIGGERED += 1;
+  }
+#endif
+
+  if (strides[1] == 0) {
+    for (int64_t i = 0; i < n; i++) {
+      *(scalar_t*)&dst[i * strides[0]] = static_interpolate_aa_single_dim<scalar_t, index_t, interp_size>(
+          src, &data[2], &strides[2], i, ids_stride);
+    }
+  } else {
+    for (int64_t i = 0; i < n; i++) {
+      *(scalar_t*)&dst[i * strides[0]] = static_interpolate_aa_single_dim<scalar_t, index_t, interp_size>(
+          src + i * strides[1], &data[2], &strides[2], i, ids_stride);
+    }
+  }
+}
+
 
 template <int m>
 static inline bool is_zero_stride(const int64_t* strides) {
@@ -169,7 +264,27 @@ void ti_cpu_upsample_generic_aa(at::TensorIterator& iter, int interp_size=-1)
         TI_BASIC_LOOP_ZERO_STRIDES_TRIGGERED += 1;
       }
 #endif
-      basic_loop_aa_single_dim_zero_strides<scalar_t, index_t>(data, strides, n);
+      if (interp_size == 5) {
+        static_basic_loop_aa_single_dim_zero_strides<scalar_t, index_t, 5>(data, strides, n);
+      } else
+      if (interp_size == 7) {
+        static_basic_loop_aa_single_dim_zero_strides<scalar_t, index_t, 7>(data, strides, n);
+      } else
+      if (interp_size == 9) {
+        static_basic_loop_aa_single_dim_zero_strides<scalar_t, index_t, 9>(data, strides, n);
+      } else
+      if (interp_size == 11) {
+        static_basic_loop_aa_single_dim_zero_strides<scalar_t, index_t, 11>(data, strides, n);
+      } else
+      if (interp_size == 13) {
+        static_basic_loop_aa_single_dim_zero_strides<scalar_t, index_t, 13>(data, strides, n);
+      } else
+      if (interp_size == 17) {
+        static_basic_loop_aa_single_dim_zero_strides<scalar_t, index_t, 17>(data, strides, n);
+      } else
+      {
+        basic_loop_aa_single_dim_zero_strides<scalar_t, index_t>(data, strides, n);
+      }
     }
     else
     {
@@ -179,8 +294,29 @@ void ti_cpu_upsample_generic_aa(at::TensorIterator& iter, int interp_size=-1)
         TI_BASIC_LOOP_NONZERO_STRIDES_TRIGGERED += 1;
       }
 #endif
-      basic_loop_aa_single_dim_nonzero_strides<scalar_t, index_t>(data, strides, n);
+      if (interp_size == 5) {
+        static_basic_loop_aa_single_dim_nonzero_strides<scalar_t, index_t, 5>(data, strides, n);
+      } else
+      if (interp_size == 7) {
+        static_basic_loop_aa_single_dim_nonzero_strides<scalar_t, index_t, 7>(data, strides, n);
+      } else
+      if (interp_size == 9) {
+        static_basic_loop_aa_single_dim_nonzero_strides<scalar_t, index_t, 9>(data, strides, n);
+      } else
+      if (interp_size == 11) {
+        static_basic_loop_aa_single_dim_nonzero_strides<scalar_t, index_t, 11>(data, strides, n);
+      } else
+      if (interp_size == 13) {
+        static_basic_loop_aa_single_dim_nonzero_strides<scalar_t, index_t, 13>(data, strides, n);
+      } else
+      if (interp_size == 17) {
+        static_basic_loop_aa_single_dim_nonzero_strides<scalar_t, index_t, 17>(data, strides, n);
+      } else
+      {
+        basic_loop_aa_single_dim_nonzero_strides<scalar_t, index_t>(data, strides, n);
+      }
     }
+
   };
 
   iter.for_each(loop);
@@ -217,7 +353,7 @@ struct HelperInterpLinear : public HelperInterpBase<index_t, scalar_t> {
 
     scalar_t scale = area_pixel_compute_scale<scalar_t>(input_size, output_size, align_corners, opt_scale);
 
-    TORCH_INTERNAL_ASSERT(antialias);
+    TORCH_INTERNAL_ASSERT(antialias && scale > 1.0);
 
 #ifdef VERBOSE
     std::cout << "-> Antialias option: scale=" << scale << std::endl;
@@ -244,8 +380,12 @@ struct HelperInterpLinear : public HelperInterpBase<index_t, scalar_t> {
     bool align_corners, scalar_t scale, int & out_interp_size
   ) {
 
+    if (scale < 1.0) {
+      scale = static_cast<scalar_t>(1.0);
+    }
+
     int interp_size = HelperInterpLinear<index_t, scalar_t>::interp_size;
-    scalar_t support = (scale > 1.0) ? (interp_size / 2) * scale : interp_size / 2 * 1.0;
+    scalar_t support = (interp_size / 2) * scale;
     interp_size = (int) ceilf(support) * 2 + 1;
 
     // return interp_size
@@ -274,7 +414,7 @@ struct HelperInterpLinear : public HelperInterpBase<index_t, scalar_t> {
       output.emplace_back(empty(new_shape, CPU(c10::CppTypeToScalarType<index_t>())));
     }
 
-    scalar_t center, total_w, invscale = (scale > 1.0) ? 1.0 / scale : 1.0;
+    scalar_t center, total_w, invscale = 1.0 / scale;
     index_t zero = static_cast<index_t>(0);
     int64_t * idx_ptr_xmin = output[0].data_ptr<index_t>();
     int64_t * idx_ptr_size = output[1].data_ptr<index_t>();
@@ -569,9 +709,6 @@ void ti_separable_upsample_generic_Nd_kernel_impl(
   _ti_separable_upsample_generic_Nd_kernel_impl_single_dim<index_t, out_ndims, scale_t, HelperInterpLinear>(
     output, temp_input, 2, align_corners, scales, antialias
   );
-  #ifdef VERBOSE
-    std::cout << "END of ti_separable_upsample_generic_Nd_kernel_impl" << std::endl;
-  #endif
 }
 
 
