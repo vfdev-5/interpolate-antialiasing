@@ -468,6 +468,12 @@ apt-get update && ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime && 
     pip install numpy typing_extensions Pillow ninja
 ```
 
+- Install PyTorch nightly with CUDA suppport
+
+```bash
+pip install --pre torch -f https://download.pytorch.org/whl/nightly/cu111/torch_nightly.html
+```
+
 - Install linux perf
 
 ```
