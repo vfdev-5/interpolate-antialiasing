@@ -464,8 +464,7 @@ apt-get update && ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime && 
     dpkg-reconfigure --frontend noninteractive tzdata && \
     apt-get install -y git cmake python3 python3-pip numactl && \
     ln -s /usr/bin/python3 /usr/bin/python && \
-    ln -s /usr/bin/pip3 /usr/bin/pip && \
-    pip install numpy typing_extensions Pillow ninja
+    pip install numpy typing_extensions Pillow ninja expecttest
 ```
 
 - Install PyTorch nightly with CUDA suppport
